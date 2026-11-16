@@ -1,0 +1,11 @@
+---
+- name: Verify /etc/hosts is configured (run configure-hosts.yml first)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - vars.yml
+
+  tasks:
+    - include_tasks: ../common/tasks/check-hosts.yml

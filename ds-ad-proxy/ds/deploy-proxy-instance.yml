@@ -1,0 +1,141 @@
+---
+- import_playbook: ../check-hosts.yml
+
+- name: Deploy 389 DS LDAP chaining proxy for multi-domain AD
+  hosts: ds_proxy
+  become: true
+
+  vars_files:
+    - ../vars.yml
+
+  tasks:
+    - name: Install 389 Directory Server
+      ansible.builtin.dnf:
+        name: 389-ds-base
+        state: present
+
+    - name: Remove any previous instance
+      ansible.builtin.command: dsctl slapd-{{ ds_instance }} remove --do-it
+      register: remove_result
+      failed_when: false
+      changed_when: remove_result.rc == 0
+
+    - name: Write instance configuration
+      ansible.builtin.copy:
+        dest: /tmp/adproxy.inf
+        mode: "0600"
+        content: |
+          [general]
+          config_version = 2
+          [slapd]
+          instance_name = {{ ds_instance }}
+          port = {{ ds_port }}
+          secure_port = {{ ds_secure_port }}
+          root_password = {{ ds_root_password }}
+          [backend-userroot]
+          suffix = {{ ds_suffix }}
+          sample_entries = no
+
+    - name: Create the instance
+      ansible.builtin.command: dscreate from-file /tmp/adproxy.inf
+
+    - name: Remove instance configuration
+      ansible.builtin.file:
+        path: /tmp/adproxy.inf
+        state: absent
+
+    - name: Verify instance is running
+      ansible.builtin.command: dsctl slapd-{{ ds_instance }} status
+      changed_when: false
+
+    - name: Copy AD certificates to proxy host
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../ad/certs/ldaps-{{ item.ad_domain }}.cer"
+        dest: "/tmp/ldaps-{{ item.ad_domain }}.cer"
+        mode: "0644"
+      loop: "{{ ad_servers }}"
+
+    - name: Convert DER certificates to PEM and import into proxy
+      ansible.builtin.shell: |
+        openssl x509 -inform der \
+          -in /tmp/ldaps-{{ item.ad_domain }}.cer \
+          -out /tmp/ad-{{ item.ad_domain.split('.')[0] }}.pem
+        dsconf slapd-{{ ds_instance }} security ca-certificate add \
+          --file /tmp/ad-{{ item.ad_domain.split('.')[0] }}.pem \
+          --name "AD-{{ item.ad_domain.split('.')[0] }}"
+      loop: "{{ ad_servers }}"
+
+    - name: Clean up temporary certificate files
+      ansible.builtin.shell: rm -f /tmp/ldaps-*.cer /tmp/ad-*.pem
+      changed_when: true
+
+    - name: Verify imported certificates
+      ansible.builtin.command: dsconf slapd-{{ ds_instance }} security ca-certificate list
+      register: cert_list
+      changed_when: false
+
+    - name: Show imported certificates
+      ansible.builtin.debug:
+        var: cert_list.stdout_lines
+
+    - name: Create top entry and search account
+      ansible.builtin.shell: |
+        ldapadd -c -x -H ldap://localhost:{{ ds_port }} \
+          -D "cn=Directory Manager" -w '{{ ds_root_password }}' <<'LDIF'
+        dn: {{ ds_suffix }}
+        objectClass: top
+        objectClass: domain
+        dc: {{ ds_suffix.split(',')[0].split('=')[1] }}
+
+        dn: uid={{ ds_search_account.uid }},{{ ds_suffix }}
+        objectClass: top
+        objectClass: person
+        objectClass: organizationalPerson
+        objectClass: inetOrgPerson
+        uid: {{ ds_search_account.uid }}
+        cn: {{ ds_search_account.uid }}
+        sn: {{ ds_search_account.uid }}
+        userPassword: {{ ds_search_account.password }}
+        LDIF
+
+    - name: Disable anonymous access
+      ansible.builtin.shell: |
+        ldapmodify -x -H ldap://localhost:{{ ds_port }} \
+          -D "cn=Directory Manager" -w '{{ ds_root_password }}' <<'LDIF'
+        dn: cn=config
+        changetype: modify
+        replace: nsslapd-allow-anonymous-access
+        nsslapd-allow-anonymous-access: rootdse
+        LDIF
+
+    - name: Create chaining link and mapping for each AD domain
+      ansible.builtin.shell: |
+        {% set short = item.ad_domain.split('.')[0] %}
+        ldapadd -c -x -H ldap://localhost:{{ ds_port }} \
+          -D "cn=Directory Manager" -w '{{ ds_root_password }}' <<'LDIF'
+        dn: cn={{ short }}-link,cn=chaining database,cn=plugins,cn=config
+        objectClass: top
+        objectClass: extensibleObject
+        objectClass: nsBackendInstance
+        cn: {{ short }}-link
+        nsslapd-suffix: dc={{ short }},{{ ds_suffix }}
+        nsFarmServerURL: ldaps://{{ item.ad_domain }}:636/
+        nsMultiplexorBindDN: CN=svc-ldapproxy,CN=Users,DC={{ item.ad_domain.split('.') | join(',DC=') }}
+        nsMultiplexorCredentials: {{ ds_proxy_bind_password }}
+        nsBindMechanism: simple
+        nsCheckLocalACI: off
+        nsProxiedAuthorization: off
+
+        dn: cn="dc={{ short }},{{ ds_suffix }}",cn=mapping tree,cn=config
+        objectClass: top
+        objectClass: extensibleObject
+        objectClass: nsMappingTree
+        cn: dc={{ short }},{{ ds_suffix }}
+        nsslapd-state: backend
+        nsslapd-backend: {{ short }}-link
+        nsslapd-parent-suffix: {{ ds_suffix }}
+        LDIF
+      loop: "{{ ad_servers }}"
+
+    - name: Restart the proxy instance
+      ansible.builtin.command: dsctl slapd-{{ ds_instance }} restart

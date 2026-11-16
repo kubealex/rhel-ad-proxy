@@ -1,0 +1,10 @@
+---
+- name: Create AD users and groups
+  hosts: windows_server
+  vars_files:
+    - ../vars.yml
+  vars:
+    ad_config: "{{ ad_servers | selectattr('ad_domain', 'equalto', inventory_hostname) | first }}"
+
+  tasks:
+    - include_tasks: ../../common/tasks/create-users-groups.yml

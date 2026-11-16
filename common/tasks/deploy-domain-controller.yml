@@ -1,0 +1,57 @@
+- name: Install all updates and reboot as needed
+  ansible.windows.win_updates:
+    category_names: '*'
+    reboot: true
+
+- name: Enable AD Domain Services feature
+  ansible.windows.win_feature:
+    name: AD-Domain-Services
+    include_management_tools: true
+    include_sub_features: true
+    state: present
+
+- name: Create new Windows domain in a new forest
+  microsoft.ad.domain:
+    create_dns_delegation: false
+    dns_domain_name: "{{ ad_config.ad_domain }}"
+    domain_netbios_name: "{{ ad_config.ad_domain_netbios }}"
+    safe_mode_password: "{{ ad_config.ad_domain_admin_pass }}"
+    reboot: true
+
+- name: Ensure server is a domain controller
+  microsoft.ad.domain_controller:
+    dns_domain_name: "{{ ad_config.ad_domain }}"
+    domain_admin_user: "{{ ad_config.ad_domain_admin_user }}@{{ ad_config.ad_domain }}"
+    domain_admin_password: "{{ ad_config.ad_domain_admin_pass }}"
+    safe_mode_password: "{{ ad_config.ad_domain_admin_pass }}"
+    state: domain_controller
+    reboot: true
+
+- name: Create DNS forwarder to IDM
+  community.windows.win_dns_zone:
+    name: "{{ idm_domain }}"
+    type: forwarder
+    dns_servers:
+      - "{{ idm_domain_controller_ip }}"
+  when: idm_domain is defined
+
+- name: Set timezone to Rome
+  ansible.windows.win_timezone:
+    timezone: W. Europe Standard Time
+
+- name: Configure NTP for forest root DC
+  ansible.windows.win_powershell:
+    script: |
+      $ntpPeers = "0.pool.ntp.org,0x8 1.pool.ntp.org,0x8 2.pool.ntp.org,0x8"
+      $w32timePath = "HKLM:\SYSTEM\CurrentControlSet\Services\W32Time"
+
+      Set-ItemProperty -Path "$w32timePath\Parameters" -Name "Type" -Value "NTP"
+      Set-ItemProperty -Path "$w32timePath\Parameters" -Name "NtpServer" -Value $ntpPeers
+      Set-ItemProperty -Path "$w32timePath\Config" -Name "AnnounceFlags" -Value 5
+      Set-ItemProperty -Path "$w32timePath\TimeProviders\NtpClient" -Name "SpecialPollInterval" -Value 900
+      Set-ItemProperty -Path "$w32timePath\TimeProviders\NtpClient" -Name "Enabled" -Value 1
+      Set-ItemProperty -Path "$w32timePath\TimeProviders\NtpServer" -Name "Enabled" -Value 1
+
+      w32tm /config /manualpeerlist:"$ntpPeers" /syncfromflags:manual /reliable:yes /update
+      Restart-Service w32time
+      w32tm /resync /force

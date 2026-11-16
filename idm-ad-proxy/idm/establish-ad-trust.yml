@@ -1,0 +1,60 @@
+---
+- import_playbook: ../check-hosts.yml
+
+- name: Establish IDM trust with AD
+  hosts: idm_server
+  vars_files:
+    - ../vars.yml
+
+  tasks:
+    - name: Create DNS forward zone for each AD domain
+      freeipa.ansible_freeipa.ipadnsforwardzone:
+        ipaadmin_password: "{{ idm_admin_password }}"
+        state: present
+        name: "{{ item.ad_domain }}"
+        forwarders:
+          - ip_address: "{{ item.ad_domain_controller_ip }}"
+        forwardpolicy: first
+      loop: "{{ ad_servers }}"
+
+    - name: Disable DNSSEC validation
+      become: true
+      ansible.builtin.lineinfile:
+        path: /etc/named/ipa-options-ext.conf
+        search_string: "dnssec-validation yes;"
+        line: "dnssec-validation no;"
+        state: present
+
+    - name: Restart named
+      become: true
+      ansible.builtin.service:
+        name: named
+        state: restarted
+
+    - name: Wait for AD domain controllers to be reachable (CIFS/LDAP/Kerberos)
+      ansible.builtin.wait_for:
+        host: "{{ item.0.ad_domain_controller_ip }}"
+        port: "{{ item.1 }}"
+        timeout: 180
+      loop: "{{ ad_servers | product([445, 389, 88]) | list }}"
+      loop_control:
+        label: "{{ item.0.ad_domain }}:{{ item.1 }}"
+
+    - name: Wait for Netlogon service to be ready
+      ansible.builtin.pause:
+        seconds: 30
+
+    - name: Establish two-way trust with each AD domain
+      freeipa.ansible_freeipa.ipatrust:
+        ipaadmin_password: "{{ idm_admin_password }}"
+        realm: "{{ item.ad_domain }}"
+        trust_type: ad
+        admin: "{{ item.ad_domain_admin_user }}"
+        password: "{{ item.ad_domain_admin_pass }}"
+        two_way: true
+        state: present
+      loop: "{{ ad_servers }}"
+      register: trust_result
+      retries: 5
+      delay: 60
+      until: trust_result is not failed

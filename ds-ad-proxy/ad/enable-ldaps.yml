@@ -1,0 +1,86 @@
+---
+- name: Enable LDAPS on each AD domain controller (self-signed, lab only)
+  hosts: windows_server
+  gather_facts: false
+
+  vars_files:
+    - ../vars.yml
+
+  tasks:
+    - name: Find the domain of this host in ad_servers
+      ansible.builtin.set_fact:
+        ad_server: "{{ ad_servers | selectattr('ad_domain', 'equalto', inventory_hostname) | first }}"
+
+    - name: Create the self-signed certificate and export its public part
+      ansible.windows.win_powershell:
+        script: |
+          $fqdn = [System.Net.Dns]::GetHostEntry($env:COMPUTERNAME).HostName
+          $cert = Get-ChildItem Cert:\LocalMachine\My |
+            Where-Object { $_.Subject -eq "CN=$fqdn" -and $_.NotAfter -gt (Get-Date).AddDays(30) } |
+            Select-Object -First 1
+          if (-not $cert) {
+            $cert = New-SelfSignedCertificate `
+              -Subject "CN=$fqdn" `
+              -DnsName @($fqdn, '{{ ad_server.ad_domain }}') `
+              -CertStoreLocation Cert:\LocalMachine\My `
+              -KeyAlgorithm RSA -KeyLength 2048 -HashAlgorithm SHA256 `
+              -KeySpec KeyExchange `
+              -Provider 'Microsoft RSA SChannel Cryptographic Provider' `
+              -KeyUsage CertSign, DigitalSignature, KeyEncipherment `
+              -TextExtension @('2.5.29.19={text}CA=true') `
+              -NotAfter (Get-Date).AddYears(5)
+            $Ansible.Changed = $true
+          } else {
+            $Ansible.Changed = $false
+          }
+          Export-Certificate -Cert $cert -FilePath "C:\ldaps-{{ inventory_hostname }}.cer" -Type CERT | Out-Null
+
+    - name: Trust the certificate on the DC itself
+      ansible.windows.win_certificate_store:
+        path: "C:\\ldaps-{{ inventory_hostname }}.cer"
+        store_location: LocalMachine
+        store_name: Root
+        state: present
+
+    - name: Fetch the public certificate to the Ansible controller
+      ansible.builtin.fetch:
+        src: "C:\\ldaps-{{ inventory_hostname }}.cer"
+        dest: "{{ playbook_dir }}/certs/"
+        flat: true
+
+    - name: Check whether the DC already presents a certificate on port 636
+      ansible.builtin.shell: >
+        echo | openssl s_client -connect {{ ad_server.ad_domain_controller_ip }}:636 2>&1 | grep -c 'BEGIN CERTIFICATE'
+      delegate_to: localhost
+      register: tls_check
+      changed_when: false
+      failed_when: false
+
+    - name: Reboot the DC so AD DS loads the certificate
+      ansible.windows.win_reboot:
+        reboot_timeout: 900
+      when: tls_check.stdout | int == 0
+
+    - name: Wait until the DC presents a certificate on port 636
+      ansible.builtin.shell: >
+        echo | openssl s_client -connect {{ ad_server.ad_domain_controller_ip }}:636 2>&1 | grep -c 'BEGIN CERTIFICATE'
+      delegate_to: localhost
+      register: tls_wait
+      changed_when: false
+      failed_when: false
+      until: tls_wait.stdout | int > 0
+      retries: 18
+      delay: 10
+
+    - name: Verify certificate fingerprint
+      ansible.builtin.shell: |
+        presented=$(echo | openssl s_client -connect {{ ad_server.ad_domain_controller_ip }}:636 2>/dev/null | openssl x509 -noout -fingerprint -sha256)
+        expected=$(openssl x509 -inform der -in "{{ playbook_dir }}/certs/ldaps-{{ inventory_hostname }}.cer" -noout -fingerprint -sha256)
+        echo "presented: $presented"
+        echo "expected:  $expected"
+        [ -n "$presented" ] && [ "$presented" = "$expected" ]
+      args:
+        executable: /bin/bash
+      delegate_to: localhost
+      register: fp_check
+      changed_when: false

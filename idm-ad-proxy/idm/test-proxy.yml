@@ -1,0 +1,117 @@
+---
+- import_playbook: ../check-hosts.yml
+
+- name: Test IdM proxy connectivity to all AD domains
+  hosts: idm_server
+  become: true
+
+  vars_files:
+    - ../vars.yml
+
+  vars:
+    test_sam_account: jdoe
+    test_user_password: "Redhat123!"
+    idm_suffix: "dc={{ idm_domain | replace('.', ',dc=') }}"
+    compat_base: "cn=users,cn=compat,{{ idm_suffix }}"
+    bind_dn: "uid=admin,cn=users,cn=accounts,{{ idm_suffix }}"
+
+  tasks:
+    - name: Resolve all AD users via SSSD (populates compat tree)
+      ansible.builtin.command: id {{ item.1.sam_account_name }}@{{ item.0.ad_domain }}
+      register: sssd_resolve
+      changed_when: false
+      failed_when: false
+      loop: "{{ ad_servers | product(ad_users) | list }}"
+      loop_control:
+        label: "{{ item.1.sam_account_name }}@{{ item.0.ad_domain }}"
+
+    - name: Show SSSD resolution results
+      ansible.builtin.debug:
+        msg: "{{ item.item.1.sam_account_name }}@{{ item.item.0.ad_domain }}: {{ item.stdout | default(item.stderr) }}"
+      loop: "{{ sssd_resolve.results }}"
+      loop_control:
+        label: "{{ item.item.1.sam_account_name }}@{{ item.item.0.ad_domain }}"
+
+    - name: Count SSSD failures
+      ansible.builtin.set_fact:
+        sssd_failures: "{{ sssd_resolve.results | selectattr('rc', 'ne', 0) | list }}"
+
+    - name: Warn on SSSD failures
+      ansible.builtin.debug:
+        msg: "WARNING: {{ sssd_failures | length }}/{{ sssd_resolve.results | length }} users failed SSSD resolution"
+      when: sssd_failures | length > 0
+
+    - name: Search for {{ test_sam_account }} across all domains via compat tree
+      ansible.builtin.shell: |
+        ldapsearch -x -LLL -o ldif-wrap=no \
+          -H ldap://{{ idm_domain_server }} \
+          -D "{{ bind_dn }}" \
+          -w '{{ idm_admin_password }}' \
+          -b "{{ compat_base }}" \
+          "(uid=*{{ test_sam_account }}*)" dn uid
+      register: global_search
+      changed_when: false
+
+    - name: Show global search results
+      ansible.builtin.debug:
+        msg: "{{ global_search.stdout_lines }}"
+
+    - name: Search per domain for {{ test_sam_account }} via compat tree
+      ansible.builtin.shell: |
+        ldapsearch -x -LLL -o ldif-wrap=no \
+          -H ldap://{{ idm_domain_server }} \
+          -D "{{ bind_dn }}" \
+          -w '{{ idm_admin_password }}' \
+          -b "{{ compat_base }}" \
+          "(uid={{ test_sam_account }}@{{ item.ad_domain }})" dn uid
+      register: per_domain_search
+      changed_when: false
+      loop: "{{ ad_servers }}"
+      loop_control:
+        label: "{{ item.ad_domain }}"
+
+    - name: Show per-domain search results
+      ansible.builtin.debug:
+        msg: "{{ item.item.ad_domain }}: {{ item.stdout_lines }}"
+      loop: "{{ per_domain_search.results }}"
+      loop_control:
+        label: "{{ item.item.ad_domain }}"
+
+    - name: Verify Kerberos authentication per domain
+      ansible.builtin.shell: |
+        echo '{{ test_user_password }}' | kinit {{ test_sam_account }}@{{ item.ad_domain | upper }} 2>&1
+        RC=$?
+        klist 2>&1
+        kdestroy 2>/dev/null
+        exit $RC
+      register: krb_bind
+      changed_when: false
+      failed_when: false
+      loop: "{{ ad_servers }}"
+      loop_control:
+        label: "{{ item.ad_domain }}"
+
+    - name: Show Kerberos results
+      ansible.builtin.debug:
+        msg: "{{ item.item.ad_domain }}: {{ 'OK' if item.rc == 0 else 'FAILED — ' + item.stdout_lines[0] | default('unknown error') }}"
+      loop: "{{ krb_bind.results }}"
+      loop_control:
+        label: "{{ item.item.ad_domain }}"
+
+    - name: Verify wrong password is rejected
+      ansible.builtin.shell: |
+        echo 'wrong' | kinit {{ test_sam_account }}@{{ ad_servers[0].ad_domain | upper }} 2>&1
+      register: wrong_pwd
+      failed_when: wrong_pwd.rc == 0
+      changed_when: false
+
+    - name: Confirm wrong password was rejected
+      ansible.builtin.debug:
+        msg: "Wrong password correctly rejected for {{ test_sam_account }}@{{ ad_servers[0].ad_domain | upper }}"
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg:
+          - "SSSD: {{ sssd_resolve.results | selectattr('rc', 'eq', 0) | list | length }}/{{ sssd_resolve.results | length }} users resolved"
+          - "Compat tree: {{ global_search.stdout_lines | select('match', '^dn:') | list | length }} entries found"
+          - "Kerberos: {{ krb_bind.results | selectattr('rc', 'eq', 0) | list | length }}/{{ krb_bind.results | length }} domains OK"

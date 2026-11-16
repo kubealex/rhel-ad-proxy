@@ -1,0 +1,96 @@
+---
+- import_playbook: ../check-hosts.yml
+
+- name: Verify IdM trusts and AD user resolution
+  hosts: idm_server
+  become: true
+
+  vars_files:
+    - ../vars.yml
+
+  vars:
+    test_sam_account: jdoe
+    test_user_password: "Redhat123!"
+
+  tasks:
+    - name: Obtain Kerberos ticket for admin
+      ansible.builtin.command: kinit admin
+      args:
+        stdin: "{{ idm_admin_password }}"
+      changed_when: false
+
+    - name: Verify trust is established for each AD domain
+      ansible.builtin.command: ipa trust-show {{ item.ad_domain }}
+      register: trust_show
+      changed_when: false
+      loop: "{{ ad_servers }}"
+      loop_control:
+        label: "{{ item.ad_domain }}"
+
+    - name: Show trust status
+      ansible.builtin.debug:
+        msg: "{{ item.item.ad_domain }}: {{ item.stdout_lines }}"
+      loop: "{{ trust_show.results }}"
+      loop_control:
+        label: "{{ item.item.ad_domain }}"
+
+    - name: Resolve AD users via SSSD for each domain
+      ansible.builtin.command: id {{ test_sam_account }}@{{ item.ad_domain }}
+      register: sssd_resolve
+      changed_when: false
+      loop: "{{ ad_servers }}"
+      loop_control:
+        label: "{{ item.ad_domain }}"
+
+    - name: Show SSSD resolution results
+      ansible.builtin.debug:
+        msg: "{{ item.item.ad_domain }}: {{ item.stdout }}"
+      loop: "{{ sssd_resolve.results }}"
+      loop_control:
+        label: "{{ item.item.ad_domain }}"
+
+    - name: Search compat tree for AD users
+      ansible.builtin.shell: |
+        ldapsearch -x -LLL -o ldif-wrap=no \
+          -H ldap://{{ idm_domain_server }} \
+          -D "uid=admin,cn=users,cn=accounts,dc={{ idm_domain | replace('.', ',dc=') }}" \
+          -w '{{ idm_admin_password }}' \
+          -b "cn=users,cn=compat,dc={{ idm_domain | replace('.', ',dc=') }}" \
+          "(uid={{ test_sam_account }}@{{ item.ad_domain }})" dn uid
+      register: compat_search
+      changed_when: false
+      loop: "{{ ad_servers }}"
+      loop_control:
+        label: "{{ item.ad_domain }}"
+
+    - name: Show compat tree results
+      ansible.builtin.debug:
+        msg: "{{ item.item.ad_domain }}: {{ item.stdout_lines }}"
+      loop: "{{ compat_search.results }}"
+      loop_control:
+        label: "{{ item.item.ad_domain }}"
+
+    - name: Verify Kerberos cross-realm TGS for each AD domain
+      ansible.builtin.shell: |
+        echo '{{ test_user_password }}' | kinit {{ test_sam_account }}@{{ item.ad_domain | upper }} 2>&1
+        klist 2>&1
+        kdestroy 2>/dev/null
+      register: krb_test
+      changed_when: false
+      failed_when: false
+      loop: "{{ ad_servers }}"
+      loop_control:
+        label: "{{ item.ad_domain }}"
+
+    - name: Show Kerberos results
+      ansible.builtin.debug:
+        msg: "{{ item.item.ad_domain }}: {{ item.stdout_lines }}"
+      loop: "{{ krb_test.results }}"
+      loop_control:
+        label: "{{ item.item.ad_domain }}"
+
+    - name: Restore admin ticket
+      ansible.builtin.command: kinit admin
+      args:
+        stdin: "{{ idm_admin_password }}"
+      changed_when: false

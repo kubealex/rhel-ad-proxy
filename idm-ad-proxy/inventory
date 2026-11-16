@@ -1,0 +1,7 @@
+[windows_server]
+external.example.com ansible_connection=winrm ansible_winrm_server_cert_validation=ignore ansible_user=Administrator ansible_password=Redhat123!
+internal.example.com ansible_connection=winrm ansible_winrm_server_cert_validation=ignore ansible_user=Administrator ansible_password=Redhat123!
+company.example.com ansible_connection=winrm ansible_winrm_server_cert_validation=ignore ansible_user=Administrator ansible_password=Redhat123!
+
+[idm_server]
+idm.rh-lab.labs ansible_user=sysadmin ansible_password=redhat ansible_ssh_common_args='-o StrictHostKeyChecking=no'

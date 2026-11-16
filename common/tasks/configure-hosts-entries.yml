@@ -1,0 +1,9 @@
+- name: Add AD domain entries to /etc/hosts
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '.*\s{{ item.ad_domain }}$'
+    line: "{{ item.ad_domain_controller_ip }}  {{ item.ad_domain }}"
+    state: present
+  loop: "{{ ad_servers }}"
+  loop_control:
+    label: "{{ item.ad_domain }} → {{ item.ad_domain_controller_ip }}"

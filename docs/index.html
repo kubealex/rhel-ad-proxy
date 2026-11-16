@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RHEL AD LDAP Proxy</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='12' y='6' width='40' height='52' rx='4' fill='%23393f44'/%3E%3Crect x='18' y='14' width='28' height='6' rx='2' fill='%2306c'/%3E%3Ccircle cx='42' cy='17' r='2' fill='%2300e676'/%3E%3Crect x='18' y='26' width='28' height='6' rx='2' fill='%2306c'/%3E%3Ccircle cx='42' cy='29' r='2' fill='%2300e676'/%3E%3Crect x='18' y='38' width='28' height='6' rx='2' fill='%2306c'/%3E%3Ccircle cx='42' cy='41' r='2' fill='%2300e676'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Red+Hat+Display:wght@400;500;700;900&family=Red+Hat+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --rh-red: #cc0000;
+      --rh-red-dark: #a30000;
+      --rh-black: #151515;
+      --rh-gray-900: #1a1a1a;
+      --rh-gray-700: #3c3f42;
+      --rh-gray-400: #6a6e73;
+      --rh-gray-200: #d2d2d2;
+      --rh-gray-100: #f0f0f0;
+      --rh-white: #ffffff;
+    }
+
+    body {
+      font-family: 'Red Hat Display', sans-serif;
+      color: var(--rh-gray-700);
+      background: var(--rh-white);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { color: var(--rh-red); text-decoration: none; }
+    a:hover { color: var(--rh-red-dark); text-decoration: underline; }
+    code, pre { font-family: 'Red Hat Mono', monospace; }
+
+    .container { max-width: 960px; margin: 0 auto; padding: 0 1.5rem; }
+
+    /* ── Disclaimer ── */
+    .disclaimer {
+      background: #fff3cd;
+      border-bottom: 2px solid #ffc107;
+      padding: 0.85rem 1rem;
+      font-size: 0.85rem;
+      color: #664d03;
+      text-align: center;
+      font-weight: 500;
+      line-height: 1.5;
+    }
+
+    /* ── Hero ── */
+    .hero {
+      background: linear-gradient(135deg, var(--rh-black) 0%, var(--rh-gray-900) 100%);
+      color: var(--rh-white);
+      padding: 5rem 0 4rem;
+      text-align: center;
+    }
+    .hero h1 {
+      font-size: 2.75rem;
+      font-weight: 900;
+      letter-spacing: -0.02em;
+      margin-bottom: 1rem;
+    }
+    .hero h1 span { color: var(--rh-red); }
+    .hero p {
+      font-size: 1.15rem;
+      color: var(--rh-gray-200);
+      max-width: 640px;
+      margin: 0 auto;
+      font-weight: 400;
+    }
+
+    /* ── Sections ── */
+    .section { padding: 4rem 0; }
+    .section + .section { border-top: 1px solid var(--rh-gray-100); }
+    .section-title {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: var(--rh-black);
+      margin-bottom: 0.5rem;
+    }
+    .section-subtitle {
+      color: var(--rh-gray-400);
+      margin-bottom: 2rem;
+      font-size: 1.05rem;
+    }
+
+    /* ── Approach toggle ── */
+    .approach-toggle {
+      display: flex;
+      border: 2px solid var(--rh-gray-200);
+      border-radius: 8px;
+      overflow: hidden;
+      margin-bottom: 2.5rem;
+    }
+    .approach-btn {
+      flex: 1;
+      padding: 1.25rem 1.5rem;
+      border: none;
+      background: var(--rh-white);
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--rh-gray-700);
+      transition: background 0.15s, color 0.15s;
+      text-align: left;
+    }
+    .approach-btn + .approach-btn { border-left: 2px solid var(--rh-gray-200); }
+    .approach-btn.active {
+      background: var(--rh-black);
+      color: var(--rh-white);
+    }
+    .approach-btn small {
+      display: block;
+      font-weight: 400;
+      font-size: 0.82rem;
+      margin-top: 0.2rem;
+      opacity: 0.65;
+    }
+
+    /* ── Approach panels ── */
+    .approach-panel { display: none; }
+    .approach-panel.active { display: block; }
+
+    .diagram-img {
+      width: 100%;
+      max-width: 780px;
+      margin: 0 auto 2rem;
+      display: block;
+    }
+
+    /* ── AD toggle ── */
+    .ad-toggle {
+      display: flex;
+      gap: 0;
+      margin-bottom: 1.5rem;
+      border: 2px solid var(--rh-gray-200);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .ad-btn {
+      flex: 1;
+      padding: 1rem 1.25rem;
+      border: none;
+      background: var(--rh-white);
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--rh-gray-700);
+      transition: all 0.15s;
+      text-align: left;
+    }
+    .ad-btn + .ad-btn {
+      border-left: 2px solid var(--rh-gray-200);
+    }
+    .ad-btn small {
+      display: block;
+      font-weight: 400;
+      font-size: 0.8rem;
+      margin-top: 0.15rem;
+      opacity: 0.6;
+    }
+    .ad-btn.active {
+      background: var(--rh-red);
+      color: var(--rh-white);
+    }
+    .ad-btn.active small {
+      opacity: 0.85;
+    }
+
+    .existing-ad-note {
+      display: none;
+      background: #e8f4fd;
+      border-left: 3px solid #0066cc;
+      padding: 0.75rem 1rem;
+      border-radius: 0 6px 6px 0;
+      font-size: 0.88rem;
+      color: var(--rh-gray-700);
+      margin-bottom: 1.5rem;
+    }
+
+    /* ── Accordion ── */
+    .accordion { counter-reset: step-counter; }
+    .accordion details {
+      border: 1px solid var(--rh-gray-200);
+      border-radius: 8px;
+      margin-bottom: 0.75rem;
+      overflow: hidden;
+    }
+    .accordion details[open] { border-color: var(--rh-red); }
+    .accordion summary {
+      padding: 1rem 1.25rem;
+      font-weight: 700;
+      font-size: 0.95rem;
+      color: var(--rh-black);
+      cursor: pointer;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      user-select: none;
+    }
+    .accordion summary::-webkit-details-marker { display: none; }
+    .accordion summary::before {
+      content: '';
+      display: inline-block;
+      width: 0; height: 0;
+      border-left: 6px solid var(--rh-red);
+      border-top: 5px solid transparent;
+      border-bottom: 5px solid transparent;
+      transition: transform 0.15s;
+      flex-shrink: 0;
+    }
+    .accordion details[open] summary::before { transform: rotate(90deg); }
+
+    .accordion details.numbered > summary::after {
+      counter-increment: step-counter;
+      content: "Step " counter(step-counter);
+      margin-left: auto;
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--rh-white);
+      background: var(--rh-red);
+      padding: 0.15rem 0.6rem;
+      border-radius: 100px;
+    }
+
+    .step-body {
+      padding: 0 1.25rem 1.25rem;
+      font-size: 0.9rem;
+      color: var(--rh-gray-700);
+    }
+    .step-body p { margin-bottom: 0.75rem; }
+    .cmd {
+      background: var(--rh-black);
+      color: #e0e0e0;
+      padding: 0.75rem 1rem;
+      border-radius: 6px;
+      overflow-x: auto;
+      font-size: 0.82rem;
+      line-height: 1.5;
+      margin-bottom: 0.5rem;
+    }
+    .cmd span { color: var(--rh-gray-400); }
+
+    /* ── Connection table ── */
+    .connect-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+      margin-top: 0.5rem;
+    }
+    .connect-table th {
+      text-align: left;
+      font-weight: 700;
+      color: var(--rh-black);
+      padding: 0.5rem 0.75rem;
+      border-bottom: 2px solid var(--rh-gray-200);
+    }
+    .connect-table td {
+      padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid var(--rh-gray-100);
+    }
+    .connect-table code {
+      background: var(--rh-gray-100);
+      padding: 0.1rem 0.35rem;
+      border-radius: 3px;
+      font-size: 0.82rem;
+    }
+
+    /* ── Shared table ── */
+    .shared-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+      margin-top: 1rem;
+    }
+    .shared-table th {
+      text-align: left;
+      font-weight: 700;
+      color: var(--rh-black);
+      padding: 0.75rem 1rem;
+      border-bottom: 2px solid var(--rh-gray-200);
+    }
+    .shared-table td {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--rh-gray-100);
+    }
+    .shared-table code {
+      background: var(--rh-gray-100);
+      padding: 0.15rem 0.4rem;
+      border-radius: 3px;
+      font-size: 0.85rem;
+    }
+
+    /* ── Cards ── */
+    .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+    @media (max-width: 720px) { .cards { grid-template-columns: 1fr; } }
+    .card {
+      border: 1px solid var(--rh-gray-200);
+      border-radius: 8px;
+      padding: 2rem;
+    }
+    .card h3 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--rh-black);
+      margin-bottom: 0.5rem;
+    }
+    .card p {
+      font-size: 0.92rem;
+      color: var(--rh-gray-400);
+      margin-bottom: 1rem;
+    }
+
+    /* ── Footer ── */
+    .footer {
+      background: var(--rh-black);
+      color: var(--rh-gray-400);
+      padding: 2rem 0;
+      text-align: center;
+      font-size: 0.82rem;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="disclaimer">
+    This project is provided as-is for <strong>testing and demonstration purposes only</strong>.
+    It is not officially supported in any way. No guarantees are made regarding its functionality,
+    reliability, or suitability for any environment. The author assumes no responsibility or liability
+    for any issues, damages, or consequences arising from its use. <strong>Use at your own risk.</strong>
+  </div>
+
+  <section class="hero">
+    <div class="container">
+      <h1>RHEL AD <span>LDAP Proxy</span></h1>
+      <p>Ansible playbooks for setting up an LDAP proxy that fronts multiple Active Directory domains, providing a single authentication endpoint for LDAP-capable applications.</p>
+    </div>
+  </section>
+
+  <!-- ═══════ Use Cases ═══════ -->
+  <section class="section">
+    <div class="container">
+      <h2 class="section-title">Choose Your Approach</h2>
+      <p class="section-subtitle">Select the approach that fits your environment, then follow the steps.</p>
+
+      <div class="approach-toggle">
+        <button class="approach-btn active" data-target="idm">IdM &ndash; AD Proxy<small>Kerberos trusts &middot; requires IdM</small></button>
+        <button class="approach-btn" data-target="ds">DS &ndash; AD Proxy<small>LDAPS chaining &middot; no IdM needed</small></button>
+      </div>
+
+      <!-- ─── IdM Panel ─── -->
+      <div class="approach-panel active" id="panel-idm">
+        <img src="diagram-idm.svg" alt="IdM AD Proxy architecture diagram" class="diagram-img">
+
+        <div class="ad-toggle">
+          <button class="ad-btn active" data-show="new">I need to set up AD<small>Deploy domain controllers, users, groups from scratch</small></button>
+          <button class="ad-btn" data-show="existing">I already have AD<small>Skip AD deployment, go straight to IdM trust setup</small></button>
+        </div>
+
+        <div class="existing-ad-note">
+          Edit <code>vars.yml</code> and <code>inventory</code> with your existing AD domain details (FQDNs, admin credentials, DC IPs) before proceeding. The playbooks below assume your AD domains are reachable and DNS is configured.
+        </div>
+
+        <div class="accordion">
+          <details class="numbered new-ad-only">
+            <summary>Configure /etc/hosts</summary>
+            <div class="step-body">
+              <p>Set <code>ad_domain_controller_ip</code> in <code>vars.yml</code> for each AD server, then populate hosts entries on the Ansible controller and IdM server.</p>
+              <div class="cmd"><pre>ansible-playbook -i inventory configure-hosts.yml</pre></div>
+            </div>
+          </details>
+          <details class="numbered new-ad-only">
+            <summary>Deploy AD domain controllers</summary>
+            <div class="step-body">
+              <p>Installs AD DS, creates three independent forests (<code>external.example.com</code>, <code>internal.example.com</code>, <code>company.example.com</code>), promotes each to DC, and configures timezone and NTP.</p>
+              <div class="cmd"><pre>ansible-playbook -i inventory ad/deploy-domain-controller.yml</pre></div>
+            </div>
+          </details>
+          <details class="numbered new-ad-only">
+            <summary>Create AD users and groups</summary>
+            <div class="step-body">
+              <p>Creates users (<code>jdoe</code>, <code>sysadmin</code>, <code>dba</code>) and group <code>linux-admins</code> on each AD domain.</p>
+              <div class="cmd"><pre>ansible-playbook -i inventory ad/create-users-groups.yml</pre></div>
+            </div>
+          </details>
+          <details class="numbered">
+            <summary>Establish Kerberos trusts</summary>
+            <div class="step-body">
+              <p>Creates DNS forward zones, disables DNSSEC validation, and establishes two-way Kerberos trusts from IdM to all three AD domains.</p>
+              <div class="cmd"><pre>ansible-playbook -i inventory idm/establish-ad-trust.yml</pre></div>
+            </div>
+          </details>
+          <details class="numbered">
+            <summary>Verify and test</summary>
+            <div class="step-body">
+              <p>Tests proxy connectivity: compat tree searches, SSSD resolution for all users, and Kerberos cross-realm authentication.</p>
+              <div class="cmd"><pre><span># Full proxy test</span>
+ansible-playbook -i inventory idm/test-proxy.yml
+
+<span># Trust infrastructure only</span>
+ansible-playbook -i inventory idm/verify-trust.yml</pre></div>
+            </div>
+          </details>
+          <details>
+            <summary>Connecting an LDAP application</summary>
+            <div class="step-body">
+              <table class="connect-table">
+                <tr><th>Parameter</th><th>Value</th></tr>
+                <tr><td>LDAP Server URI</td><td><code>ldap://&lt;idm-server-fqdn&gt;</code></td></tr>
+                <tr><td>Bind DN</td><td><code>uid=admin,cn=users,cn=accounts,dc=rh-lab,dc=labs</code></td></tr>
+                <tr><td>User Search Base</td><td><code>cn=users,cn=compat,dc=rh-lab,dc=labs</code></td></tr>
+                <tr><td>User Search Scope</td><td><code>SUBTREE</code></td></tr>
+                <tr><td>User Search Filter</td><td><code>(uid=%(user)s)</code></td></tr>
+              </table>
+            </div>
+          </details>
+          <details>
+            <summary>Cleanup</summary>
+            <div class="step-body">
+              <p>Removes all three trusts and their DNS forward zones from IdM.</p>
+              <div class="cmd"><pre>ansible-playbook -i inventory cleanup.yml</pre></div>
+            </div>
+          </details>
+        </div>
+      </div>
+
+      <!-- ─── DS Panel ─── -->
+      <div class="approach-panel" id="panel-ds">
+        <img src="diagram-ds.svg" alt="DS AD Proxy architecture diagram" class="diagram-img">
+
+        <div class="ad-toggle">
+          <button class="ad-btn active" data-show="new">I need to set up AD<small>Deploy domain controllers, users, groups, and LDAPS from scratch</small></button>
+          <button class="ad-btn" data-show="existing">I already have AD with LDAPS<small>Skip AD deployment, go straight to proxy setup</small></button>
+        </div>
+
+        <div class="existing-ad-note">
+          Edit <code>vars.yml</code> and <code>inventory</code> with your existing AD domain details (FQDNs, admin credentials, DC IPs). Your AD domains must have LDAPS (port 636) enabled and be reachable from the proxy host.
+        </div>
+
+        <div class="accordion">
+          <details class="numbered new-ad-only">
+            <summary>Configure /etc/hosts</summary>
+            <div class="step-body">
+              <p>Set <code>ad_domain_controller_ip</code> in <code>vars.yml</code> for each AD server, then populate hosts entries on the Ansible controller and DS proxy host.</p>
+              <div class="cmd"><pre>ansible-playbook -i inventory configure-hosts.yml</pre></div>
+            </div>
+          </details>
+          <details class="numbered new-ad-only">
+            <summary>Deploy AD domain controllers</summary>
+            <div class="step-body">
+              <p>Installs AD DS, creates three independent forests (<code>external.example.com</code>, <code>internal.example.com</code>, <code>company.example.com</code>), promotes each to DC, and configures timezone and NTP.</p>
+              <div class="cmd"><pre>ansible-playbook -i inventory ad/deploy-domain-controller.yml</pre></div>
+            </div>
+          </details>
+          <details class="numbered new-ad-only">
+            <summary>Create AD users and groups</summary>
+            <div class="step-body">
+              <p>Creates users (<code>jdoe</code>, <code>sysadmin</code>, <code>dba</code>) and group <code>linux-admins</code> on each AD domain.</p>
+              <div class="cmd"><pre>ansible-playbook -i inventory ad/create-users-groups.yml</pre></div>
+            </div>
+          </details>
+          <details class="numbered new-ad-only">
+            <summary>Enable LDAPS on each domain controller</summary>
+            <div class="step-body">
+              <p>Creates self-signed certificates, trusts them, reboots each DC, and verifies LDAPS is working on port 636.</p>
+              <div class="cmd"><pre>ansible-playbook -i inventory ad/enable-ldaps.yml</pre></div>
+            </div>
+          </details>
+          <details class="numbered">
+            <summary>Create proxy bind accounts</summary>
+            <div class="step-body">
+              <p>Creates the <code>svc-ldapproxy</code> service account on each AD domain for the chaining bind.</p>
+              <div class="cmd"><pre>ansible-playbook -i inventory ad/create-proxy-account.yml</pre></div>
+            </div>
+          </details>
+          <details class="numbered">
+            <summary>Deploy the 389 DS proxy</summary>
+            <div class="step-body">
+              <p>Full proxy lifecycle: creates the <code>slapd-adproxy</code> instance on port 3911, configures certificates, creates entries, and sets up chaining to each AD domain.</p>
+              <div class="cmd"><pre>ansible-playbook -i inventory ds/deploy-proxy-instance.yml</pre></div>
+            </div>
+          </details>
+          <details class="numbered">
+            <summary>Test connectivity</summary>
+            <div class="step-body">
+              <p>Cross-domain search, service account bind verification, and wrong password rejection test.</p>
+              <div class="cmd"><pre>ansible-playbook -i inventory ds/test-proxy.yml</pre></div>
+            </div>
+          </details>
+          <details>
+            <summary>Connecting an LDAP application</summary>
+            <div class="step-body">
+              <table class="connect-table">
+                <tr><th>Parameter</th><th>Value</th></tr>
+                <tr><td>LDAP Server URI</td><td><code>ldap://&lt;ds-proxy-fqdn&gt;:3911</code></td></tr>
+                <tr><td>Bind DN</td><td><code>uid=svc-cm,dc=example,dc=com</code></td></tr>
+                <tr><td>Bind Password</td><td><code>SvcCmPass123!</code></td></tr>
+                <tr><td>User Search Base</td><td><code>dc=example,dc=com</code></td></tr>
+                <tr><td>User Search Scope</td><td><code>SUBTREE</code></td></tr>
+                <tr><td>User Search Filter</td><td><code>(userPrincipalName=%(user)s)</code></td></tr>
+                <tr><td>Group Type</td><td><code>MemberDNGroupType</code></td></tr>
+                <tr><td>Connection Options</td><td><code>OPT_REFERRALS: 0</code></td></tr>
+              </table>
+              <p style="margin-top: 0.75rem; font-size: 0.85rem; color: var(--rh-gray-400);">Using <code>userPrincipalName</code> (e.g., <code>jdoe@external.example.com</code>) lets users specify which domain they are authenticating against when the same <code>sAMAccountName</code> exists in multiple domains.</p>
+            </div>
+          </details>
+          <details>
+            <summary>Troubleshooting LDAPS</summary>
+            <div class="step-body">
+              <p>If LDAPS is not working on a domain controller, run the diagnostic playbook. It checks boot time, AD DS certificate events (ID 1220), and certificate details.</p>
+              <div class="cmd"><pre>ansible-playbook -i inventory ad/diagnose-ldaps.yml</pre></div>
+            </div>
+          </details>
+          <details>
+            <summary>Cleanup</summary>
+            <div class="step-body">
+              <p>Removes the 389 DS instance and the <code>svc-ldapproxy</code> accounts from each AD domain.</p>
+              <div class="cmd"><pre>ansible-playbook -i inventory cleanup.yml</pre></div>
+            </div>
+          </details>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ═══════ Prerequisites ═══════ -->
+  <section class="section">
+    <div class="container">
+      <h2 class="section-title">Prerequisites</h2>
+      <p class="section-subtitle">What you need before deploying.</p>
+      <div class="cards">
+        <div class="card">
+          <h3>Ansible Collections</h3>
+          <p>Install required collections before running any playbooks.</p>
+          <div class="cmd"><pre>ansible-galaxy collection install \
+  -r common/requirements.yml</pre></div>
+        </div>
+        <div class="card">
+          <h3>Windows Server VMs</h3>
+          <p>Prepare a sysprepped base image, then clone it for each DC.</p>
+          <div class="cmd"><pre>ansible-playbook -i &lt;inventory&gt; \
+  common/sysprep/generalize-base-image.yml</pre></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════ Shared Components ═══════ -->
+  <section class="section">
+    <div class="container">
+      <h2 class="section-title">Shared Components</h2>
+      <p class="section-subtitle">Common resources used by both approaches.</p>
+      <table class="shared-table">
+        <thead><tr><th>Directory</th><th>Contents</th></tr></thead>
+        <tbody>
+          <tr><td><code>common/tasks/</code></td><td>Shared Ansible task files for DC deployment, user/group creation, and <code>/etc/hosts</code> management</td></tr>
+          <tr><td><code>common/sysprep/</code></td><td>Windows Server base image preparation (sysprep + unattend)</td></tr>
+          <tr><td><code>common/requirements.yml</code></td><td>Ansible collection dependencies</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="container">
+      This project is provided as-is for testing and demonstration purposes only. It is not officially supported.
+      The author assumes no responsibility or liability for any issues arising from its use.
+    </div>
+  </footer>
+
+  <script>
+    document.querySelectorAll('.approach-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('.approach-btn').forEach(function(b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        document.querySelectorAll('.approach-panel').forEach(function(p) { p.classList.remove('active'); });
+        document.getElementById('panel-' + btn.dataset.target).classList.add('active');
+      });
+    });
+
+    document.querySelectorAll('.ad-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var panel = btn.closest('.approach-panel');
+        panel.querySelectorAll('.ad-btn').forEach(function(b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        var isNew = btn.dataset.show === 'new';
+        panel.querySelectorAll('.new-ad-only').forEach(function(el) {
+          el.style.display = isNew ? '' : 'none';
+        });
+        panel.querySelector('.existing-ad-note').style.display = isNew ? 'none' : 'block';
+      });
+    });
+  </script>
+</body>
+</html>

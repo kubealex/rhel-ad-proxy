@@ -1,0 +1,29 @@
+---
+- name: Diagnose LDAPS on each AD domain controller
+  hosts: windows_server
+  gather_facts: false
+
+  tasks:
+    - name: Collect boot time, events and certificate details
+      ansible.windows.win_shell: |
+        "boot: " + (Get-CimInstance Win32_OperatingSystem).LastBootUpTime
+        "now:  " + (Get-Date)
+        "own cert trusted in Root store: " + [bool](Get-ChildItem Cert:\LocalMachine\Root | Where-Object { $_.Subject -like '*example.com*' })
+        $e = Get-WinEvent -FilterHashtable @{LogName='Directory Service'; Id=1220} -MaxEvents 3 -ErrorAction SilentlyContinue
+        if ($e) {
+          $e | ForEach-Object { "event 1220 at " + $_.TimeCreated + " :: " + ($_.Message -replace '\s+', ' ') }
+        } else {
+          "no event 1220"
+        }
+        Get-ChildItem Cert:\LocalMachine\My | Where-Object { $_.Subject -like '*example.com*' } | ForEach-Object {
+          "cert: " + $_.Subject + "  (created " + $_.NotBefore + ")"
+          "  private key: " + $_.HasPrivateKey
+          "  eku: " + (($_.EnhancedKeyUsageList | ForEach-Object { $_.FriendlyName }) -join ', ')
+          "  ext: " + (($_.Extensions | ForEach-Object { $_.Oid.FriendlyName + '=' + $_.Format($false) }) -join ' | ')
+        }
+      register: diag
+      changed_when: false
+
+    - name: Show diagnostics
+      ansible.builtin.debug:
+        var: diag.stdout_lines

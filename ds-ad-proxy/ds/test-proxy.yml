@@ -1,0 +1,108 @@
+---
+- import_playbook: ../check-hosts.yml
+
+- name: Test 389 DS proxy connectivity to all AD domains
+  hosts: ds_proxy
+  become: true
+
+  vars_files:
+    - ../vars.yml
+
+  vars:
+    test_sam_account: jdoe
+
+  tasks:
+    - name: Verify instance is running
+      ansible.builtin.command: dsctl slapd-{{ ds_instance }} status
+      changed_when: false
+
+    - name: Search for {{ test_sam_account }} across all domains
+      ansible.builtin.shell: |
+        ldapsearch -x -LLL -o ldif-wrap=no \
+          -H ldap://localhost:{{ ds_port }} \
+          -D "uid={{ ds_search_account.uid }},{{ ds_suffix }}" \
+          -w '{{ ds_search_account.password }}' \
+          -b {{ ds_suffix }} \
+          "(sAMAccountName={{ test_sam_account }})" dn
+      register: global_search
+      changed_when: false
+
+    - name: Show global search results
+      ansible.builtin.debug:
+        msg: "{{ global_search.stdout_lines }}"
+
+    - name: Search per domain for {{ test_sam_account }}
+      ansible.builtin.shell: |
+        {% set short = item.ad_domain.split('.')[0] %}
+        ldapsearch -x -LLL -o ldif-wrap=no \
+          -H ldap://localhost:{{ ds_port }} \
+          -D "uid={{ ds_search_account.uid }},{{ ds_suffix }}" \
+          -w '{{ ds_search_account.password }}' \
+          -b "dc={{ short }},{{ ds_suffix }}" \
+          "(sAMAccountName={{ test_sam_account }})" dn sAMAccountName memberOf
+      register: per_domain_search
+      changed_when: false
+      loop: "{{ ad_servers }}"
+      loop_control:
+        label: "{{ item.ad_domain }}"
+
+    - name: Show per-domain results
+      ansible.builtin.debug:
+        msg: "{{ item.item.ad_domain }}: {{ item.stdout_lines | select('match', '^(dn|sAMAccountName|memberOf):') | list }}"
+      loop: "{{ per_domain_search.results }}"
+      loop_control:
+        label: "{{ item.item.ad_domain }}"
+
+    - name: Search all users per domain
+      ansible.builtin.shell: |
+        {% set short = item.0.ad_domain.split('.')[0] %}
+        ldapsearch -x -LLL -o ldif-wrap=no \
+          -H ldap://localhost:{{ ds_port }} \
+          -D "uid={{ ds_search_account.uid }},{{ ds_suffix }}" \
+          -w '{{ ds_search_account.password }}' \
+          -b "dc={{ short }},{{ ds_suffix }}" \
+          "(&(objectClass=person)(sAMAccountName={{ user_item.sam_account_name }}))" dn
+      register: all_users_search
+      changed_when: false
+      failed_when: false
+      loop: "{{ ad_servers | product(ad_users) | list }}"
+      loop_control:
+        label: "{{ item.1.sam_account_name }}@{{ item.0.ad_domain }}"
+      vars:
+        user_item: "{{ item.1 }}"
+
+    - name: Count user search results
+      ansible.builtin.set_fact:
+        search_found: "{{ all_users_search.results | selectattr('stdout', 'search', '^dn:') | list | length }}"
+        search_total: "{{ all_users_search.results | length }}"
+
+    - name: Show user search summary
+      ansible.builtin.debug:
+        msg: "{{ search_found }}/{{ search_total }} users found via proxy search"
+
+    - name: Verify service account bind works
+      ansible.builtin.command: >
+        ldapwhoami -x
+        -H ldap://localhost:{{ ds_port }}
+        -D "uid={{ ds_search_account.uid }},{{ ds_suffix }}"
+        -w '{{ ds_search_account.password }}'
+      changed_when: false
+
+    - name: Verify wrong service account password is rejected
+      ansible.builtin.command: >
+        ldapwhoami -x
+        -H ldap://localhost:{{ ds_port }}
+        -D "uid={{ ds_search_account.uid }},{{ ds_suffix }}"
+        -w 'wrong'
+      register: wrong_pwd
+      failed_when: wrong_pwd.rc == 0
+      changed_when: false
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg:
+          - "Instance: running"
+          - "Global search: {{ global_search.stdout_lines | select('match', '^dn:') | list | length }} entries found for {{ test_sam_account }}"
+          - "Per-user search: {{ search_found }}/{{ search_total }} users found"
+          - "Service account bind: OK"
+          - "Wrong password rejected: OK"

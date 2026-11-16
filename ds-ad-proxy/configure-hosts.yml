@@ -1,0 +1,21 @@
+---
+- name: Populate /etc/hosts on the Ansible controller
+  hosts: localhost
+  connection: local
+  become: true
+
+  vars_files:
+    - vars.yml
+
+  tasks:
+    - include_tasks: ../common/tasks/configure-hosts-entries.yml
+
+- name: Populate /etc/hosts for AD domain resolution
+  hosts: ds_proxy
+  become: true
+
+  vars_files:
+    - vars.yml
+
+  tasks:
+    - include_tasks: ../common/tasks/configure-hosts-entries.yml

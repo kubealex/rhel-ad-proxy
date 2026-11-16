@@ -1,0 +1,5 @@
+collections:
+  - ansible.windows
+  - community.windows
+  - freeipa.ansible_freeipa
+  - microsoft.ad

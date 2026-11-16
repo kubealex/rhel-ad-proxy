@@ -1,0 +1,49 @@
+---
+idm_domain: rh-lab.labs
+idm_domain_server: idm.rh-lab.labs
+idm_domain_controller_ip: CHANGE_ME
+idm_admin_password: redhat123
+
+ad_users:
+  - identity: jdoe
+    sam_account_name: jdoe
+    firstname: Jane
+    lastname: Doe
+    password: "Redhat123!"
+  - identity: sysadmin
+    sam_account_name: sysadmin
+    firstname: Tom
+    lastname: Parker
+    password: "Redhat123!"
+  - identity: dba
+    sam_account_name: dba
+    firstname: Lisa
+    lastname: Chen
+    password: "Redhat123!"
+
+ad_groups:
+  - name: linux-admins
+    scope: global
+    members:
+      - jdoe
+      - sysadmin
+      - dba
+
+ad_servers:
+  - ad_domain: external.example.com
+    ad_domain_netbios: EXTERNAL
+    ad_domain_admin_user: Administrator
+    ad_domain_admin_pass: "Redhat123!"
+    ad_domain_controller_ip: CHANGE_ME
+
+  - ad_domain: internal.example.com
+    ad_domain_netbios: INTERNAL
+    ad_domain_admin_user: Administrator
+    ad_domain_admin_pass: "Redhat123!"
+    ad_domain_controller_ip: CHANGE_ME
+
+  - ad_domain: company.example.com
+    ad_domain_netbios: COMPANY
+    ad_domain_admin_user: Administrator
+    ad_domain_admin_pass: "Redhat123!"
+    ad_domain_controller_ip: CHANGE_ME

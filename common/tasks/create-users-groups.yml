@@ -1,0 +1,19 @@
+- name: Create users
+  microsoft.ad.user:
+    identity: "{{ item.identity }}"
+    sam_account_name: "{{ item.sam_account_name }}"
+    upn: "{{ item.identity }}@{{ ad_config.ad_domain }}"
+    firstname: "{{ item.firstname }}"
+    lastname: "{{ item.lastname }}"
+    password: "{{ item.password }}"
+    enabled: true
+    state: present
+  loop: "{{ ad_users }}"
+
+- name: Create groups
+  microsoft.ad.group:
+    name: "{{ item.name }}"
+    scope: "{{ item.scope }}"
+    members:
+      add: "{{ item.members }}"
+  loop: "{{ ad_groups }}"

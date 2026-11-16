@@ -1,0 +1,48 @@
+---
+- name: Remove IDM trusts, ID ranges, and DNS forward zones
+  hosts: idm_server
+  vars_files:
+    - vars.yml
+
+  tasks:
+    - name: Remove AD trusts
+      freeipa.ansible_freeipa.ipatrust:
+        ipaadmin_password: "{{ idm_admin_password }}"
+        realm: "{{ item.ad_domain }}"
+        state: absent
+      loop: "{{ ad_servers }}"
+      loop_control:
+        label: "{{ item.ad_domain }}"
+
+    - name: Remove AD trust ID ranges
+      freeipa.ansible_freeipa.ipaidrange:
+        ipaadmin_password: "{{ idm_admin_password }}"
+        name: "{{ item.ad_domain | upper }}_id_range"
+        state: absent
+      loop: "{{ ad_servers }}"
+      loop_control:
+        label: "{{ item.ad_domain }}"
+      ignore_errors: true
+
+    - name: Remove DNS forward zones
+      freeipa.ansible_freeipa.ipadnsforwardzone:
+        ipaadmin_password: "{{ idm_admin_password }}"
+        name: "{{ item.ad_domain }}"
+        state: absent
+      loop: "{{ ad_servers }}"
+      loop_control:
+        label: "{{ item.ad_domain }}"
+
+    - name: Re-enable DNSSEC validation
+      become: true
+      ansible.builtin.lineinfile:
+        path: /etc/named/ipa-options-ext.conf
+        search_string: "dnssec-validation no;"
+        line: "dnssec-validation yes;"
+        state: present
+
+    - name: Restart named
+      become: true
+      ansible.builtin.service:
+        name: named
+        state: restarted

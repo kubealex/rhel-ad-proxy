@@ -1,0 +1,57 @@
+---
+- import_playbook: check-hosts.yml
+
+- name: Remove DS proxy instance
+  hosts: ds_proxy
+  become: true
+
+  vars_files:
+    - vars.yml
+
+  tasks:
+    - name: Stop and remove the 389 DS instance
+      ansible.builtin.command: dsctl slapd-{{ ds_instance }} remove --do-it
+      register: remove_result
+      failed_when: false
+      changed_when: remove_result.rc == 0
+
+    - name: Show removal result
+      ansible.builtin.debug:
+        msg: "{{ 'Instance removed' if remove_result.rc == 0 else 'No instance to remove' }}"
+
+    - name: Remove imported CA certificates
+      ansible.builtin.shell: |
+        certutil -D -d /etc/dirsrv/slapd-{{ ds_instance }} \
+          -n "AD-{{ item.ad_domain.split('.')[0] }}" 2>/dev/null || true
+      loop: "{{ ad_servers }}"
+      loop_control:
+        label: "{{ item.ad_domain }}"
+      failed_when: false
+      changed_when: false
+
+    - name: Clean up leftover certificate files
+      ansible.builtin.shell: rm -f /tmp/ldaps-*.cer /tmp/ad-*.pem
+      changed_when: true
+
+    - name: Remove instance configuration file if leftover
+      ansible.builtin.file:
+        path: /tmp/adproxy.inf
+        state: absent
+
+- name: Remove proxy service accounts from AD
+  hosts: windows_server
+  gather_facts: false
+
+  vars_files:
+    - vars.yml
+
+  tasks:
+    - name: Find the domain of this host in ad_servers
+      ansible.builtin.set_fact:
+        ad_server: "{{ ad_servers | selectattr('ad_domain', 'equalto', inventory_hostname) | first }}"
+
+    - name: Remove svc-ldapproxy account
+      microsoft.ad.user:
+        identity: svc-ldapproxy
+        state: absent
+      ignore_unreachable: true

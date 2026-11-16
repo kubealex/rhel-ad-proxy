@@ -1,0 +1,32 @@
+- name: Abort if any ad_domain_controller_ip is still CHANGE_ME
+  ansible.builtin.fail:
+    msg: |
+      The following AD servers still have ad_domain_controller_ip set to CHANGE_ME in vars.yml:
+      {% for s in ad_servers if s.ad_domain_controller_ip == 'CHANGE_ME' %}
+        - {{ s.ad_domain }}
+      {% endfor %}
+
+      Set the correct IPs in vars.yml first.
+  when: ad_servers | selectattr('ad_domain_controller_ip', 'equalto', 'CHANGE_ME') | list | length > 0
+
+- name: Check that AD domain entries exist in /etc/hosts with correct IP
+  ansible.builtin.shell: grep -E '^\s*{{ item.ad_domain_controller_ip }}\s+.*{{ item.ad_domain }}' /etc/hosts
+  loop: "{{ ad_servers }}"
+  loop_control:
+    label: "{{ item.ad_domain }}"
+  changed_when: false
+  register: hosts_check
+  ignore_errors: true
+
+- name: Abort if /etc/hosts is missing or has wrong IPs
+  ansible.builtin.fail:
+    msg: |
+      The following AD domains are missing or have wrong IPs in /etc/hosts:
+      {% for r in hosts_check.results if r.rc != 0 %}
+        - {{ r.item.ad_domain }} should map to {{ r.item.ad_domain_controller_ip }}
+      {% endfor %}
+
+      Run configure-hosts.yml first:
+        1. Set ad_domain_controller_ip for each server in vars.yml
+        2. ansible-playbook -i inventory configure-hosts.yml
+  when: hosts_check.results | selectattr('rc', 'ne', 0) | list | length > 0

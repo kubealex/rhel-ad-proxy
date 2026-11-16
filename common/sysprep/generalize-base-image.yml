@@ -1,0 +1,64 @@
+---
+- name: Generalize the base Windows image
+  hosts: base_system
+  gather_facts: false
+  vars:
+    sysprep_admin_password: Redhat123!
+    sysprep_locale: en-US
+    sysprep_keyboard: it-IT
+    sysprep_timezone: W. Europe Standard Time
+    winrm_script_url: https://raw.githubusercontent.com/kubealex/winrm-setup/main/winrm-setup.ps1
+
+  tasks:
+    - name: Refuse to run on a domain controller
+      ansible.windows.win_shell: (Get-CimInstance Win32_ComputerSystem).DomainRole
+      register: domain_role
+      changed_when: false
+      failed_when: domain_role.stdout | trim | int >= 4
+
+    - name: Install all updates and reboot as needed
+      ansible.windows.win_updates:
+        category_names: '*'
+        reboot: true
+
+    - name: Create working directories
+      ansible.windows.win_file:
+        path: "{{ item }}"
+        state: directory
+      loop:
+        - C:\sysprep
+        - C:\Windows\Setup\Scripts
+
+    - name: Store the WinRM setup script locally (clones won't need internet)
+      ansible.windows.win_get_url:
+        url: "{{ winrm_script_url }}"
+        dest: C:\Windows\Setup\Scripts\winrm-setup.ps1
+        force: true
+
+    - name: Render unattend.xml
+      ansible.windows.win_template:
+        src: unattend.xml.j2
+        dest: C:\sysprep\unattend.xml
+      no_log: true
+
+    - name: Run sysprep (generalize, shut down)
+      ansible.windows.win_command: >
+        C:\Windows\System32\Sysprep\sysprep.exe /generalize /oobe /shutdown /quiet
+        /unattend:C:\sysprep\unattend.xml
+      async: 900
+      poll: 0
+
+    - name: Wait for the VM to go down
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host | default(inventory_hostname) }}"
+        port: "{{ ansible_port | default(5985) }}"
+        state: stopped
+        delay: 30
+        timeout: 900
+      delegate_to: localhost
+
+    - name: Next step
+      ansible.builtin.debug:
+        msg: >
+          Sysprep done. Check with virsh domstate that the VM is shut off, do NOT boot it again,
+          chmod a-w the qcow2 and create the backing-file clones.
