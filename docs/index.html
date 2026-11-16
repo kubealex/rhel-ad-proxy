@@ -366,7 +366,7 @@
         </div>
 
         <div class="existing-ad-note">
-          Edit <code>vars.yml</code> and <code>inventory</code> with your existing AD domain details (FQDNs, admin credentials, DC IPs) before proceeding. The playbooks below assume your AD domains are reachable and DNS is configured.
+          Edit <code>vars.yml</code> and <code>inventory</code> with your existing AD domain details (FQDNs, admin credentials, DC IPs) before proceeding. Your AD domains must be reachable and you will need to create a DNS conditional forwarder on each AD domain controller pointing to IdM (required for two-way trust).
         </div>
 
         <div class="accordion">
@@ -380,7 +380,7 @@
           <details class="numbered new-ad-only">
             <summary>Deploy AD domain controllers</summary>
             <div class="step-body">
-              <p>Installs AD DS, creates three independent forests (<code>external.example.com</code>, <code>internal.example.com</code>, <code>company.example.com</code>), promotes each to DC, and configures timezone and NTP.</p>
+              <p>Installs AD DS, creates three independent forests (<code>external.example.com</code>, <code>internal.example.com</code>, <code>company.example.com</code>), promotes each to DC, and configures timezone and NTP. Also creates a DNS conditional forwarder on each DC pointing to IdM.</p>
               <div class="cmd"><pre>ansible-playbook -i inventory ad/deploy-domain-controller.yml</pre></div>
             </div>
           </details>
@@ -389,6 +389,16 @@
             <div class="step-body">
               <p>Creates users (<code>jdoe</code>, <code>sysadmin</code>, <code>dba</code>) and group <code>linux-admins</code> on each AD domain.</p>
               <div class="cmd"><pre>ansible-playbook -i inventory ad/create-users-groups.yml</pre></div>
+            </div>
+          </details>
+          <details class="numbered existing-ad-only" style="display:none">
+            <summary>Create DNS forwarder to IdM on each AD DC</summary>
+            <div class="step-body">
+              <p>Each AD domain controller needs a conditional forwarder for the IdM domain so it can resolve IdM's Kerberos SRV records. This is required for the two-way trust to work. On each AD DC, run in PowerShell:</p>
+              <div class="cmd"><pre>Add-DnsServerConditionalForwarderZone `
+  -Name "rh-lab.labs" `
+  -MasterServers &lt;IdM-IP-address&gt;</pre></div>
+              <p style="font-size: 0.82rem; color: var(--rh-gray-400);">Replace <code>rh-lab.labs</code> with your IdM domain and <code>&lt;IdM-IP-address&gt;</code> with the IdM server IP. Repeat on every AD domain controller.</p>
             </div>
           </details>
           <details class="numbered">
@@ -595,6 +605,9 @@ ansible-playbook -i inventory idm/verify-trust.yml</pre></div>
         var isNew = btn.dataset.show === 'new';
         panel.querySelectorAll('.new-ad-only').forEach(function(el) {
           el.style.display = isNew ? '' : 'none';
+        });
+        panel.querySelectorAll('.existing-ad-only').forEach(function(el) {
+          el.style.display = isNew ? 'none' : '';
         });
         panel.querySelector('.existing-ad-note').style.display = isNew ? 'none' : 'block';
       });
